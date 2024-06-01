@@ -1,18 +1,35 @@
-const express = require("express");
-const bcrypt = require('bcryptjs');
-const jwt = require("jsonwebtoken");
-const User = require("../models/User.model");
+import express, { Request, Response } from "express";
+import bcrypt from 'bcryptjs';
+import jwt from "jsonwebtoken";
 
-const { isAuthenticated } = require('./../middleware/jwt.middleware.js');
+import User from "../models/User.model";
+// import User from "../models/User.model.alternative";
+
+
+import { isAuthenticated } from './../middleware/jwt.middleware';
+
 
 const router = express.Router();
 const saltRounds = 10;
 
 
-// POST /auth/signup  - Creates a new user in the database
-router.post('/signup', (req, res, next) => {
-  const { email, password, name } = req.body;
 
+
+// Extend the Request interface to include your expected body type
+interface SignupRequest extends Request {
+  body: {
+    email: string;
+    password: string;
+    name: string;
+  };
+}
+
+
+// POST /auth/signup  - Creates a new user in the database
+router.post('/signup', (req: SignupRequest, res, next) => {
+
+  const { email, password, name } = req.body;
+  
   // Check if email or password or name are provided as empty string 
   if (email === '' || password === '' || name === '') {
     res.status(400).json({ message: "Provide email, password and name" });
@@ -54,6 +71,12 @@ router.post('/signup', (req, res, next) => {
     .then((createdUser) => {
       // Deconstruct the newly created user object to omit the password
       // We should never expose passwords publicly
+
+      // createdUser can be undefined (we use a type guard to check for this)
+      if(createdUser === undefined){
+        throw new Error("Error creating user.");
+      }
+
       const { email, name, _id } = createdUser;
     
       // Create a new object that doesn't expose the password
@@ -69,8 +92,18 @@ router.post('/signup', (req, res, next) => {
 });
 
 
+
+
+interface LoginRequest extends Request {
+  body: {
+    email: string;
+    password: string;
+  };
+}
+
+
 // POST  /auth/login - Verifies email and password and returns a JWT
-router.post('/login', (req, res, next) => {
+router.post('/login', (req: LoginRequest, res, next) => {
   const { email, password } = req.body;
 
   // Check if email or password are provided as empty string 
@@ -99,10 +132,19 @@ router.post('/login', (req, res, next) => {
         // Create an object that will be set as the token payload
         const payload = { _id, email, name };
 
+
+        // the environment variable TOKEN_SECRET can be undefined
+        // (we use a type guard to handle this case)
+        const tokenSecret = process.env.TOKEN_SECRET;
+        if (tokenSecret === undefined) {
+          throw new Error("TOKEN_SECRET environment variable is not defined");
+        }
+
+
         // Create and sign the token
         const authToken = jwt.sign( 
           payload,
-          process.env.TOKEN_SECRET,
+          tokenSecret,
           { algorithm: 'HS256', expiresIn: "6h" }
         );
 
@@ -114,12 +156,15 @@ router.post('/login', (req, res, next) => {
       }
 
     })
-    .catch(err => res.status(500).json({ message: "Internal Server Error" }));
+    .catch(err => {
+      console.log("Error logging in:", err);
+      res.status(500).json({ message: "Internal Server Error" })
+    });
 });
 
 
 // GET  /auth/verify  -  Used to verify JWT stored on the client
-router.get('/verify', isAuthenticated, (req, res, next) => {
+router.get('/verify', isAuthenticated, (req: Request, res: Response) => {
 
   // If JWT token is valid the payload gets decoded by the
   // isAuthenticated middleware and made available on `req.payload`
@@ -131,4 +176,4 @@ router.get('/verify', isAuthenticated, (req, res, next) => {
 });
 
 
-module.exports = router;
+export default router;
